@@ -61,6 +61,7 @@ public class MultiVCFAnalyzer {
 		String outSNPtableWithUncertaintyCallsWithSnpEffInfos = outputFolder+"/snpTableWithUncertaintyCallsWithSnpEffInfos.tsv";
 		String outGenoTypeTable4Structure = outputFolder+"/structureGenotypes.tsv";
 		String outGenoTypeTable4StructureCompDel = outputFolder+"/structureGenotypes_noMissingData-Columns.tsv";
+		String outJSON = outputFolder+"/MultiVFAnalyzer.json"
 		
 		String infoOut = outputFolder+"/info.txt";
 		
@@ -167,6 +168,19 @@ public class MultiVCFAnalyzer {
 		statbw.write("SNP statistics for "+numVCFs+" samples.\nQuality Threshold: "+minQual+"\nCoverage Threshold: "+minCov+"\nMinimum SNP allele frequency: "+minHomSNPallelFreq+"\n");
 		statbw.write("sample\tSNP Calls (all)\tSNP Calls (het)\tcoverage(fold)\tcoverage(percent)\trefCall\tallPos\tnoCall\tdiscardedRefCall\tdiscardedVarCall\tfilteredVarCall\tunhandledGenotype\n");
 		
+		//Add all the metadata to JSON output too
+		HashMap<String, Object> json_map = new HashMap<>();
+		HashMap<String, Object> meta_map = new HashMap<>();
+		meta_map.put("numVCFs", numVCFs);
+		meta_map.put("quality_threshold", minQual);
+		meta_map.put("coverage_threshold", minCov);
+		meta_map.put("min_snp_allele_freq", minHomSNPallelFreq);
+		meta_map.put("tool_name", "MultiVCFAnalyzer");
+		meta_map.put("version", version);
+		json_map.put("metadata", meta_map);
+
+		HashMap<String, Object> metric_map = new HashMap<>();
+
 		char nChar='N';
 		char rChar='R';
 		//counter
@@ -202,6 +216,7 @@ public class MultiVCFAnalyzer {
 		for(int vcfIndex =0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			br = new BufferedReader(new FileReader(args[vcfIndex+vcfArgumentsOffset]));
+			HashMap<String,Object> sample_map = new HashMap<>();
 			
 			System.out.println("Now processing "+(vcfIndex+1)+"/"+numVCFs+": "+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
 			
@@ -410,7 +425,22 @@ public class MultiVCFAnalyzer {
 			covround = Math.round((covCount/(double)allPos)*100)/100d;
 
 			statbw.write(getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset])+"\t"+varCallPos+"\t"+hetVarCallPos+"\t"+covround+"\t"+(100-nperc)+"\t"+refCallPos+"\t"+allPos+"\t"+noCallPos+"\t"+discardedRefCall+"\t"+discardedVarCall+"\t"+filteredVarCall+"\t"+unknownCall+"\n");
-		
+
+			//Write the same to JSON dictionary
+			sample_map.put("SNP Calls (all)",varCallPos );
+			sample_map.put("SNP Calls (het)", hetVarCallPos);
+			sample_map.put("coverage (fold)", covround);
+			sample_map.put("coverage (percent)", (100-nperc));
+			sample_map.put("refCall",refCallPos);
+			sample_map.put("allPos", allPos);
+			sample_map.put("noCall", noCallPos);
+			sample_map.put("discardedRefCall", discardedRefCall);
+			sample_map.put("discardedVarCall", discardedVarCall);
+			sample_map.put("filteredVarCall", filteredVarCall);
+			sample_map.put("unhandledGenotype", unknownCall);
+			//Put that back to metric_map for each sample
+			metric_map.put(getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]), sample_map);
+	
 			//Time
 			timeLeft =Math.round(((System.currentTimeMillis()-startTime)/(double)(vcfIndex+1))*(numVCFs-(vcfIndex+1)));
 			System.out.println("\t("+Math.round(timeLeft/60000)+" minutes remaining)");
