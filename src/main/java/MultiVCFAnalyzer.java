@@ -18,7 +18,7 @@ import java.util.Set;
  * @author Alexander Herbig
  *
  */
-public class Main {
+public class MultiVCFAnalyzer {
 
 	/**
 	 * @param args
