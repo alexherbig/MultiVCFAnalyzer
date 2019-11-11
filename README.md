@@ -1,4 +1,6 @@
 # MultiVCFAnalyzer
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/multivcfanalyzer/README.html)
+
 
 MultiVCFAnalyzer reads multiple VCF files as produced by the GATK UnifiedGenotyper and after filtering provides the combined genotype calls in a number of formats that are suitable for follow-up analyses such as phylogenetic reconstruction, SNP effect analyses, population genetic analyses etc.<br>
 Furthermore, the results are provided in the form of various tables for manual inspection and presentation/publication purposes.
