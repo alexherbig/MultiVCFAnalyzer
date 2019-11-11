@@ -11,10 +11,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-//JSON support (automatically resolved using Gradle - just type "gradle build")
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+
 
 
 /**
@@ -65,7 +64,7 @@ public class MultiVCFAnalyzer {
 		String outSNPtableWithUncertaintyCallsWithSnpEffInfos = outputFolder+"/snpTableWithUncertaintyCallsWithSnpEffInfos.tsv";
 		String outGenoTypeTable4Structure = outputFolder+"/structureGenotypes.tsv";
 		String outGenoTypeTable4StructureCompDel = outputFolder+"/structureGenotypes_noMissingData-Columns.tsv";
-		String outJSON = outputFolder+"/MultiVFAnalyzer.json"
+		String outJSON = outputFolder+"/MultiVCFAnalyzer.json";
 		
 		String infoOut = outputFolder+"/info.txt";
 		
@@ -455,9 +454,9 @@ public class MultiVCFAnalyzer {
 
 		//Write out the proper JSON file
 		json_map.put("metrics", metric_map);
-		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		
-		String json = gson.toJSON(json_map);
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();		
+
+		String json = gson.toJson(json_map);
 		jsonfw.write(json);
 		jsonfw.flush();
         jsonfw.close();
