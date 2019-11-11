@@ -12,6 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+//JSON support (automatically resolved using Gradle - just type "gradle build")
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
 
 /**
  * 
@@ -168,6 +172,8 @@ public class MultiVCFAnalyzer {
 		statbw.write("SNP statistics for "+numVCFs+" samples.\nQuality Threshold: "+minQual+"\nCoverage Threshold: "+minCov+"\nMinimum SNP allele frequency: "+minHomSNPallelFreq+"\n");
 		statbw.write("sample\tSNP Calls (all)\tSNP Calls (het)\tcoverage(fold)\tcoverage(percent)\trefCall\tallPos\tnoCall\tdiscardedRefCall\tdiscardedVarCall\tfilteredVarCall\tunhandledGenotype\n");
 		
+		//FileWriter for JSON output
+		FileWriter jsonfw = new FileWriter(outJSON);
 		//Add all the metadata to JSON output too
 		HashMap<String, Object> json_map = new HashMap<>();
 		HashMap<String, Object> meta_map = new HashMap<>();
@@ -446,6 +452,15 @@ public class MultiVCFAnalyzer {
 			System.out.println("\t("+Math.round(timeLeft/60000)+" minutes remaining)");
 		}
 		statbw.close();
+
+		//Write out the proper JSON file
+		json_map.put("metrics", metric_map);
+		Gson gson = new GsonBuilder().setPrettyPrinting().create();
+		
+		String json = gson.toJSON(json_map);
+		jsonfw.write(json);
+		jsonfw.flush();
+        jsonfw.close();
 		//////////////////////
 		//END -- Parse VCFs //
 		//////////////////////
