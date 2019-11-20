@@ -103,7 +103,7 @@ The snpStatistics column definitions are as follows
 6. **filteredVarCall**: Number of positions with discarded calls based on user filter list
 7. **unhandledGenotype**: Number of positions with discarded calls for having more than two possible alleles (e.g. Ref: A, ALT: G,T)
 8. **refCall**: Number of reference calls made
-9. **SNP Calls (all)**: Total number of non-reference calls made
+9. **SNP Calls (all)**: Total number of non-reference homozygous and heterozgyous calls made
 10. **SNP Calls (het)**: Total number of non-reference calls not passing user-supplied heterozygosity/homozygosity thresholds
 11. **coverage(fold)**: Average number of reads covering final calls
 12. **coverage(percent)**: Percent coverage of all positions with final calls
