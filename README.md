@@ -1,4 +1,5 @@
 # MultiVCFAnalyzer
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/multivcfanalyzer/README.html)
 
 ## Table of Contents
   - [Description](#description)
@@ -9,8 +10,6 @@
   - [FAQs](#faqs)
 
 ## Description
-
-[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/multivcfanalyzer/README.html)
 
 **MultiVCFAnalyzer is a SNP filtering and SNP alignment generation tool, designed around (but not limited to) low coverage ancient DNA data.** MultiVCFanalyzer reads multiple VCF files as produced by GATK UnifiedGenotyper, performs filtering based on a number of criteria, and provides the combined genotype calls in a number of formats that are suitable for follow-up analyses such as phylogenetic reconstruction, SNP effect analyses, population genetic analyses etc.
 
