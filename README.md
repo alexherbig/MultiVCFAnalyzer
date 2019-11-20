@@ -14,7 +14,7 @@ If you use MultiVCFAnalyzer please cite:
 
 Bos, Harkins, Herbig, Coscolla _et al._ 'Pre-Columbian mycobacterial genomes reveal seals as a source of New World human tuberculosis' _Nature_ 514, 494–497 (23 October 2014) [doi:10.1038/nature13591](dx.doi.org/10.1038/nature13591)
 
-A more detailed description of the program can be seen in the supplementary information under "SNP Calling and Phylogenetic Analysis.
+A more detailed description of the program can be seen in the supplementary information under "SNP Calling and Phylogenetic Analysis".
 
 In case of any questions please contact Alexander Herbig (herbig@shh.mpg.de).
 
