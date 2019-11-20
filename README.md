@@ -1,5 +1,12 @@
 # MultiVCFAnalyzer
 
+  - [Description](#description)
+  - [Citation](#citation)
+  - [Usage](#usage)
+  - [Example](#example)
+  - [Output](#output)
+  - [FAQs](#faqs)
+
 ## Description
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat)](http://bioconda.github.io/recipes/multivcfanalyzer/README.html)
@@ -88,18 +95,18 @@ The following files are created in output directory:
 
 The snpStatistics column definitions are as follows
 
-1. Sample: folder name of VCF file
-2. allPos: length of FASTA file in base pairs (bp)
-3. noCall: Number of positions with no call made as reported by GATK
-4. discardedRefCall: Number of positions with a discarded reference call for not passing GATK quality control
-5. discardedVarCall: Number of positions with a discarded variant call for not passing GATK quality control
-6. filteredVarCall: Number of positions with discarded calls based on user filter list
-7. unhandledGenotype: Number of positions with discarded calls for having more than two possible alleles (e.g. Ref: A, ALT: G,T)
-8. refCall: Number of reference calls made
-9. SNP Calls (all): Total number of non-reference calls made
-10. SNP Calls (het): Total number of non-reference calls not passing user-supplied heterozygosity/homozygosity thresholds
-11. coverage(fold): Average number of reads covering final calls
-12. coverage(percent): Percent coverage of all positions with final calls
+1. **Sample**: folder name of VCF file
+2. **allPos**: length of FASTA file in base pairs (bp)
+3. **noCall**: Number of positions with no call made as reported by GATK
+4. **discardedRefCall**: Number of positions with a discarded reference call for not passing GATK quality control
+5. **discardedVarCall**: Number of positions with a discarded variant call for not passing GATK quality control
+6. **filteredVarCall**: Number of positions with discarded calls based on user filter list
+7. **unhandledGenotype**: Number of positions with discarded calls for having more than two possible alleles (e.g. Ref: A, ALT: G,T)
+8. **refCall**: Number of reference calls made
+9. **SNP Calls (all)**: Total number of non-reference calls made
+10. **SNP Calls (het)**: Total number of non-reference calls not passing user-supplied heterozygosity/homozygosity thresholds
+11. **coverage(fold)**: Average number of reads covering final calls
+12. **coverage(percent)**: Percent coverage of all positions with final calls
 
 > Even if 'EMIT_ALL_SITES' is turned on, GATK will ignore any non-ACGT positions in the reference entirely (e.g. Ns), and will not export that position in the VCF file. Thus, refCall + SNP Calls (all) may not match allPos - noCall - discardedRefCall - discardedVarCall - filteredVarCall - unhandledGenotype as these positions are not supplied to MultiVCFAnalyzer'. You can check for this by checking the discrepancy of the two previous calculations is equal across every sample.
 
