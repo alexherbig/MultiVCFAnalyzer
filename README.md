@@ -98,8 +98,8 @@ The snpStatistics column definitions are as follows
 1. **Sample**: folder name of VCF file
 2. **allPos**: length of FASTA file in base pairs (bp)
 3. **noCall**: Number of positions with no call made as reported by GATK
-4. **discardedRefCall**: Number of positions with a discarded reference call for not passing GATK quality control
-5. **discardedVarCall**: Number of positions with a discarded variant call for not passing GATK quality control
+4. **discardedRefCall**: Number of positions with a discarded reference call for not passing genotyping or coverage thresholds
+5. **discardedVarCall**: Number of positions with a discarded variant call for not passing genotyping or coverage thresholds
 6. **filteredVarCall**: Number of positions with discarded calls based on user filter list
 7. **unhandledGenotype**: Number of positions with discarded calls for having more than two possible alleles (e.g. Ref: A, ALT: G,T)
 8. **refCall**: Number of reference calls made
