@@ -1,5 +1,6 @@
 # MultiVCFAnalyzer
 
+## Table of Contents
   - [Description](#description)
   - [Citation](#citation)
   - [Usage](#usage)
