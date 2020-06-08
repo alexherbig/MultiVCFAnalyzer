@@ -307,7 +307,11 @@ public class MultiVCFAnalyzer {
 				else if(allelCols[0].equals("0/0"))
 				{
 					qual = Double.parseDouble(cols[5]);
-					cov=Integer.parseInt(allelCols[1]);
+					if(allelCols.length==3){
+						cov=Integer.parseInt(allelCols[2]);
+					} else {
+						cov=Integer.parseInt(allelCols[1]);
+					}
 					covCount+=cov;
 					
 					if(qual>=minQual && cov >= minCov)
