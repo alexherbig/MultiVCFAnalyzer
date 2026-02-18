@@ -1,8 +1,10 @@
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -11,16 +13,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import java.util.zip.GZIPInputStream;
 
 
 
-/**
- * 
- * @author Alexander Herbig
- *
- */
 public class MultiVCFAnalyzer {
 
 	/**
@@ -30,8 +26,8 @@ public class MultiVCFAnalyzer {
 	{
 		String programName = "MultiVCFAnalyzer";
 		String author = "Alexander Herbig";
-		String authorsEmail = "herbig@shh.mpg.de";
-		String version = "0.85.2";
+		String authorsEmail = "alexander_herbig@eva.mpg.de";
+		String version = "0.88.1";
 		
 		System.out.println(programName+" - "+version+"\nby "+author+"\n");
 		
@@ -64,6 +60,8 @@ public class MultiVCFAnalyzer {
 		String outSNPtableWithUncertaintyCallsWithSnpEffInfos = outputFolder+"/snpTableWithUncertaintyCallsWithSnpEffInfos.tsv";
 		String outGenoTypeTable4Structure = outputFolder+"/structureGenotypes.tsv";
 		String outGenoTypeTable4StructureCompDel = outputFolder+"/structureGenotypes_noMissingData-Columns.tsv";
+		String outGenoTypeMatrix = outputFolder+"/genotypeMatrix.tsv";
+		String outGenoTypeFreqMatrix = outputFolder+"/genotypeFreqMatrix.tsv";
 		String outJSON = outputFolder+"/MultiVCFAnalyzer.json";
 		
 		String infoOut = outputFolder+"/info.txt";
@@ -88,6 +86,14 @@ public class MultiVCFAnalyzer {
 		String refGenomeName = FASTAParser.parseDNA(refFastaFile).keySet().iterator().next();
 		
 		int numOutgroups = 0;
+		
+		// make output folder
+		File dataDir = new File(outputFolder);
+		if(!dataDir.exists())
+		{
+			dataDir.mkdir();
+			System.out.println("Created output directory:\n"+outputFolder);
+		}
 		
 		//write initial infos
 		BufferedWriter infobw = new BufferedWriter(new FileWriter(infoOut));
@@ -128,16 +134,20 @@ public class MultiVCFAnalyzer {
 		Date date = new Date();
 		infobw.write("Run started: "+date.toGMTString()+"\n");
 		
+		//write initial infos into json
+		BufferedWriter jsonbw = new BufferedWriter(new FileWriter(outJSON));
+		
+		jsonbw.write("{\n");
+		jsonbw.write("  \"metadata\": {\n");
+		jsonbw.write("    \"tool_name\": \"MultiVCFAnalyzer\",\n");
+		jsonbw.write("    \"version\": \""+version+"\",\n");
+		jsonbw.write("    \"numVCFs\": "+numVCFs+",\n");
+		jsonbw.write("    \"quality_threshold\": "+minQual+",\n");
+		jsonbw.write("    \"coverage_threshold\": "+minCov+",\n");
+		jsonbw.write("    \"min_snp_allele_freq_hom\": "+minHomSNPallelFreq+",\n");
+		jsonbw.write("    \"min_snp_allele_freq_het\": "+minHetSNPallelFreq+"\n");
+		jsonbw.write("  },\n");
 
-
-		// make output folder
-		File dataDir = new File(outputFolder);
-		if(!dataDir.exists())
-		{
-			dataDir.mkdir();
-			System.out.println("Created output directory:\n"+outputFolder);
-			infobw.write("Output directory did not exist and was created.\n");
-		}
 		
 		//SNP array
 		char[][] snpColumns = new char[refGenome.length()][numVCFs];
@@ -171,21 +181,9 @@ public class MultiVCFAnalyzer {
 		statbw.write("SNP statistics for "+numVCFs+" samples.\nQuality Threshold: "+minQual+"\nCoverage Threshold: "+minCov+"\nMinimum SNP allele frequency: "+minHomSNPallelFreq+"\n");
 		statbw.write("sample\tSNP Calls (all)\tSNP Calls (het)\tcoverage(fold)\tcoverage(percent)\trefCall\tallPos\tnoCall\tdiscardedRefCall\tdiscardedVarCall\tfilteredVarCall\tunhandledGenotype\n");
 		
-		//FileWriter for JSON output
-		FileWriter jsonfw = new FileWriter(outJSON);
-		//Add all the metadata to JSON output too
-		HashMap<String, Object> json_map = new HashMap<>();
-		HashMap<String, Object> meta_map = new HashMap<>();
-		meta_map.put("numVCFs", numVCFs);
-		meta_map.put("quality_threshold", minQual);
-		meta_map.put("coverage_threshold", minCov);
-		meta_map.put("min_snp_allele_freq", minHomSNPallelFreq);
-		meta_map.put("tool_name", "MultiVCFAnalyzer");
-		meta_map.put("version", version);
-		json_map.put("metadata", meta_map);
-
-		HashMap<String, Object> metric_map = new HashMap<>();
-
+		//start json
+		jsonbw.write("  \"metrics\": {\n");
+		
 		char nChar='N';
 		char rChar='R';
 		//counter
@@ -220,8 +218,7 @@ public class MultiVCFAnalyzer {
 		boolean outgroup;
 		for(int vcfIndex =0; vcfIndex<numVCFs; vcfIndex++)
 		{
-			br = new BufferedReader(new FileReader(args[vcfIndex+vcfArgumentsOffset]));
-			HashMap<String,Object> sample_map = new HashMap<>();
+			br = new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(args[vcfIndex+vcfArgumentsOffset])))); //br = new BufferedReader(new FileReader(args[vcfIndex+vcfArgumentsOffset]));
 			
 			System.out.println("Now processing "+(vcfIndex+1)+"/"+numVCFs+": "+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
 			
@@ -430,36 +427,37 @@ public class MultiVCFAnalyzer {
 			covround = Math.round((covCount/(double)allPos)*100)/100d;
 
 			statbw.write(getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset])+"\t"+varCallPos+"\t"+hetVarCallPos+"\t"+covround+"\t"+(100-nperc)+"\t"+refCallPos+"\t"+allPos+"\t"+noCallPos+"\t"+discardedRefCall+"\t"+discardedVarCall+"\t"+filteredVarCall+"\t"+unknownCall+"\n");
-
-			//Write the same to JSON dictionary
-			sample_map.put("SNP Calls (all)",varCallPos );
-			sample_map.put("SNP Calls (het)", hetVarCallPos);
-			sample_map.put("coverage (fold)", covround);
-			sample_map.put("coverage (percent)", (100-nperc));
-			sample_map.put("refCall",refCallPos);
-			sample_map.put("allPos", allPos);
-			sample_map.put("noCall", noCallPos);
-			sample_map.put("discardedRefCall", discardedRefCall);
-			sample_map.put("discardedVarCall", discardedVarCall);
-			sample_map.put("filteredVarCall", filteredVarCall);
-			sample_map.put("unhandledGenotype", unknownCall);
-			//Put that back to metric_map for each sample
-			metric_map.put(getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]), sample_map);
-	
+			
+			//write stats to json
+			jsonbw.write("   \""+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset])+"\": {\n");
+			jsonbw.write("      \"SNP Calls (all)\": "+varCallPos+",\n");
+			jsonbw.write("      \"SNP Calls (het)\": "+hetVarCallPos+",\n");
+			jsonbw.write("      \"coverage (fold)\": "+covround+",\n");
+			jsonbw.write("      \"coverage (percent)\": "+(100-nperc)+",\n");
+			jsonbw.write("      \"refCall\": "+refCallPos+",\n");
+			jsonbw.write("      \"allPos\": "+allPos+",\n");
+			jsonbw.write("      \"noCall\": "+noCallPos+",\n");
+			jsonbw.write("      \"discardedRefCall\": "+discardedRefCall+",\n");
+			jsonbw.write("      \"discardedVarCall\": "+discardedVarCall+",\n");
+			jsonbw.write("      \"filteredVarCall\": "+filteredVarCall+",\n");
+			jsonbw.write("      \"unhandledGenotype\": "+unknownCall+"\n");
+			jsonbw.write("    }");
+			//all have a ',' but the last
+			if (vcfIndex+vcfArgumentsOffset!=args.length-1)
+				jsonbw.write(",");
+			jsonbw.write("\n");
+			
 			//Time
 			timeLeft =Math.round(((System.currentTimeMillis()-startTime)/(double)(vcfIndex+1))*(numVCFs-(vcfIndex+1)));
 			System.out.println("\t("+Math.round(timeLeft/60000)+" minutes remaining)");
 		}
 		statbw.close();
-
-		//Write out the proper JSON file
-		json_map.put("metrics", metric_map);
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();		
-
-		String json = gson.toJson(json_map);
-		jsonfw.write(json);
-		jsonfw.flush();
-        jsonfw.close();
+		
+		//finalize json
+		jsonbw.write("  }\n");
+		jsonbw.write("}\n");
+		jsonbw.close();
+		
 		//////////////////////
 		//END -- Parse VCFs //
 		//////////////////////
@@ -685,6 +683,102 @@ public class MultiVCFAnalyzer {
 		}
 		
 		bw.close();
+		
+		//Write Genotype Matrix
+		System.out.println("Writing Genotype Matrix:\n"+outGenoTypeMatrix);
+		if(!writeFreqsInStatTable)
+			System.out.println("WARNING: No SNP frequencies calculated! The matrix will be imprecise! Switch on SNP frequency calculation!");
+		
+		snptabbw = new BufferedWriter(new FileWriter(outGenoTypeMatrix));
+		
+		snptabbw.write("Position\tRef");
+		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+		{
+			snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
+		}
+		snptabbw.newLine();
+			
+		for(int pos : snpPositionList)
+		{
+			snptabbw.write(pos+"\t"+refGenome.charAt(pos-1));
+			
+			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+			{
+				snptabbw.write("\t");
+				tmpchar = snpColumns[pos-1][vcfIndex];
+				if(tmpchar==refGenome.charAt(pos-1))
+					snptabbw.write("-1");
+				else
+				{
+					if(tmpchar=='N')
+						snptabbw.write('?');
+					
+					if(!writeFreqsInStatTable && tmpchar!='N')
+					{
+						snptabbw.write('1');
+					}
+					
+					if(writeFreqsInStatTable && tmpchar!='N')
+					{
+						if(snpFrequencies[pos-1][vcfIndex]<minHomSNPallelFreq)
+							snptabbw.write('0');
+						else
+							snptabbw.write('1');
+					}
+				}
+			}
+			snptabbw.newLine();
+		}
+		
+		snptabbw.close();
+		
+		//Write Genotype Freq Matrix
+		System.out.println("Writing Genotype Frequency Matrix:\n"+outGenoTypeFreqMatrix);
+		if(!writeFreqsInStatTable)
+			System.out.println("WARNING: No SNP frequencies calculated! The matrix will be imprecise! Switch on SNP frequency calculation!");
+		
+		snptabbw = new BufferedWriter(new FileWriter(outGenoTypeFreqMatrix));
+		
+		snptabbw.write("Position\tRef");
+		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+		{
+			snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
+		}
+		snptabbw.newLine();
+			
+		for(int pos : snpPositionList)
+		{
+			snptabbw.write(pos+"\t"+refGenome.charAt(pos-1));
+			
+			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+			{
+				snptabbw.write("\t");
+				tmpchar = snpColumns[pos-1][vcfIndex];
+				if(tmpchar==refGenome.charAt(pos-1))
+					snptabbw.write("0.0");
+				else
+				{
+					if(tmpchar=='N')
+						snptabbw.write('?');
+					
+					if(!writeFreqsInStatTable && tmpchar!='N')
+					{
+						snptabbw.write("1.0");
+					}
+					
+					if(writeFreqsInStatTable && tmpchar!='N')
+					{
+						if(snpFrequencies[pos-1][vcfIndex]<minHomSNPallelFreq)
+							snptabbw.write(Double.toString(Math.min(snpFrequencies[pos-1][vcfIndex], 1.0)));
+						else
+							snptabbw.write("1.0");
+					}
+				}
+			}
+			snptabbw.newLine();
+		}
+		
+		snptabbw.close();
 
 		//Write SNPeff table
 		bw = new BufferedWriter(new FileWriter(outSNPtable4SnpEff));
@@ -1102,8 +1196,8 @@ public class MultiVCFAnalyzer {
 	{
 		String[] res = sampleNameWithPath.split("/");
 		
-		if(res.length>=2)
-			return res[res.length-2];
+		if(res.length>=1)
+			return res[res.length-1];
 		else
 			return sampleNameWithPath;
 	}
