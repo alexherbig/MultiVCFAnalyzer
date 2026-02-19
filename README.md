@@ -23,7 +23,7 @@ Bos, Harkins, Herbig, Coscolla _et al._ 'Pre-Columbian mycobacterial genomes rev
 
 A more detailed description of the program can be seen in the supplementary information under "SNP Calling and Phylogenetic Analysis".
 
-In case of any questions please contact Alexander Herbig (herbig@shh.mpg.de).
+In case of any questions please contact Alexander Herbig (alexander_herbig@eva.mpg.de).
 
 ## Usage
 
