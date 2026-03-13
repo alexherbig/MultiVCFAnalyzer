@@ -28,7 +28,7 @@ public class MultiVCFAnalyzer {
 		String programName = "MultiVCFAnalyzer";
 		String author = "Alexander Herbig";
 		String authorsEmail = "alexander_herbig@eva.mpg.de";
-		String version = "0.89";
+		String version = "0.89.0";
 		
 		System.out.println(programName+" - "+version+"\nby "+author+"\n");
 		
