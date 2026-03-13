@@ -116,10 +116,6 @@ The snpStatistics column definitions are as follows
 
 Set both homozygous and heterozygous frequency to the same value. Only ACTGs passing your thresholds will then be reported.
 
-### All my sample names are the same, or are named e.g. 'output'
-
-MultiVCFAnalyzer takes the sample name from the files _directory_. Ensure each VCF file is in a unique directory.
-
 ### How do I increase the amount of memory?
 
 Increase the amount of memory allocated to java with the `-Xmx` parameter (here 16 gigabytes)
