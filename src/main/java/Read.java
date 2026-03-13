@@ -7,11 +7,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 
- * @author Alexander Herbig
- *
- */
+
 public class Read 
 {
 
@@ -29,6 +25,7 @@ public class Read
 		String[] cells;
 		SNPeffSNP snp;
 		
+		String chromName;
 		int pos;
 		char from;
 		char to;
@@ -48,6 +45,7 @@ public class Read
 			
 			cells = line.split("\t",-1);
 			
+			chromName =				cells[ 0];
 			pos = Integer.parseInt( cells[ 1]);
 			from = 					cells[ 2].charAt(0);
 			to = 					cells[ 3].charAt(0);
@@ -59,7 +57,7 @@ public class Read
 			codonNum = 				cells[18];
 			cdsSize =  				cells[20];
 			
-			snp = new SNPeffSNP(pos, from, to, geneID, geneName, effect, aaChange, codonChange, codonNum, cdsSize);
+			snp = new SNPeffSNP(chromName, pos, from, to, geneID, geneName, effect, aaChange, codonChange, codonNum, cdsSize);
 			
 			res.add(snp);
 		}
@@ -267,7 +265,7 @@ public class Read
 			
 			//create gene
 			if(type.equalsIgnoreCase("gene"))
-				res.add(new Gene(id,desc,start,end,strand,idAsParent));
+				res.add(new Gene(source,id,desc,start,end,strand,idAsParent));
 		}
 		r.close();
 		
@@ -373,7 +371,7 @@ public class Read
 			
 			//create gene
 			if(type.equalsIgnoreCase("CDS"))
-				res.add(new Gene(id,desc,start,end,strand,idAsParent));
+				res.add(new Gene(source,id,desc,start,end,strand,idAsParent));
 		}
 		r.close();
 		
