@@ -1,8 +1,4 @@
-/**
- * 
- * @author Alexander Herbig
- *
- */
+
 public class SNPeffSNP extends SNP
 {
 	//Position	Reference	Change	Gene_ID	Gene_name	Effect	old_AA/new_AA	Old_codon/New_codon	Codon_Num(CDS)	CDS_size
@@ -16,9 +12,9 @@ public class SNPeffSNP extends SNP
 	public String codonNum;
 	public String cdsSize;
 	
-	public SNPeffSNP(int pos, char from, char to, String geneID, String geneName, String effect, String aaChange, String codonChange, String codonNum, String cdsSize)
+	public SNPeffSNP(String chromName, int pos, char from, char to, String geneID, String geneName, String effect, String aaChange, String codonChange, String codonNum, String cdsSize)
 	{
-		super(pos);
+		super(chromName,pos);
 		this.from = from;
 		this.to = to;
 		this.geneID = geneID;
