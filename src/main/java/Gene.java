@@ -1,10 +1,8 @@
-/**
- * 
- * @author Alexander Herbig
- *
- */
+
 public class Gene
 {
+	public String chromName;
+	
 	public String name;
 	public String anno;
 	
@@ -14,8 +12,9 @@ public class Gene
 	public String idAsParent;
 	
 	
-	public Gene(String name, String anno, int start, int end, char strand, String idAsParent) {
+	public Gene(String chromName, String name, String anno, int start, int end, char strand, String idAsParent) {
 		super();
+		this.chromName = chromName;
 		this.name = name;
 		this.anno = anno;
 		this.start = start;
