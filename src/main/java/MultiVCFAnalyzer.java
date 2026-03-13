@@ -7,8 +7,9 @@ import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
+//import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +28,7 @@ public class MultiVCFAnalyzer {
 		String programName = "MultiVCFAnalyzer";
 		String author = "Alexander Herbig";
 		String authorsEmail = "alexander_herbig@eva.mpg.de";
-		String version = "0.88.1";
+		String version = "0.89";
 		
 		System.out.println(programName+" - "+version+"\nby "+author+"\n");
 		
@@ -73,17 +74,16 @@ public class MultiVCFAnalyzer {
 		double minHomSNPallelFreq = Double.parseDouble(args[7]);
 		double minHetSNPallelFreq = Double.parseDouble(args[8]);
 		
-		String positions2ExcludeFiles = args[9];//Can be upt to two files: 1st: repeat regs etc. 2nd: CDS file to exclude 1st,2nd codon pos
+		String positions2ExcludeFiles = args[9];//Can be up to two files: 1st: repeat regs etc. 2nd: CDS file to exclude 1st,2nd codon pos
 		
-		Set<Integer> positions2ExcludeSet = getPositionsToExclude(positions2ExcludeFiles);
+		Map<String,Set<Integer>> positions2ExcludeSet = getPositionsToExclude(positions2ExcludeFiles);
 		
 		int vcfArgumentsOffset = 10;
 		
 		int numVCFs = args.length-vcfArgumentsOffset;
 		
-		String refGenome = FASTAParser.parseDNA(refFastaFile).values().iterator().next();
+		Map<String,String> refGenome = FASTAParser.parseDNA(refFastaFile); 
 		
-		String refGenomeName = FASTAParser.parseDNA(refFastaFile).keySet().iterator().next();
 		
 		int numOutgroups = 0;
 		
@@ -129,7 +129,6 @@ public class MultiVCFAnalyzer {
 		infobw.write("Write allele frequencies: "+writeFreqsInStatTable+"\n");
 		
 		infobw.write("\nAdditional notes:\n");
-		infobw.write("Reference genome name: "+refGenomeName+"\n");
 		infobw.write("Number of genomes (vcf files): "+numVCFs+"\n");
 		Date date = new Date();
 		infobw.write("Run started: "+date.toGMTString()+"\n");
@@ -150,27 +149,54 @@ public class MultiVCFAnalyzer {
 
 		
 		//SNP array
-		char[][] snpColumns = new char[refGenome.length()][numVCFs];
-		char[][] uncertainSnpColumns = new char[refGenome.length()][numVCFs];
+		Map<String,char[][]> snpColumns = new LinkedHashMap<String,char[][]>();
 		
-		Set<Integer> snpPositions = new HashSet<Integer>();
+		Map<String,char[][]> uncertainSnpColumns = new LinkedHashMap<String,char[][]>();
 		
-		boolean[] missingDataPos = new boolean[refGenome.length()];
+		Map<String,Set<Integer>> snpPositions = new LinkedHashMap<String,Set<Integer>>();
+				
+		Map<String,double[][]> snpFrequencies = new LinkedHashMap<String,double[][]>();
 		
-		//Freq array
-		double[][] snpFrequencies = null;
-		if(writeFreqsInStatTable)
+		char nChar='N';
+		char rChar='R';
+		
+		//initialize arrays
+		for (Map.Entry<String, String> entry : refGenome.entrySet())
 		{
-			snpFrequencies = new double[refGenome.length()][numVCFs];
+		    String chromName = entry.getKey();
+		    String chromSeq = entry.getValue();
+
+		    if (chromSeq != null)
+		    { 
+		        int chromLength = chromSeq.length();
+		       
+		        snpColumns.put(chromName, new char[chromLength][numVCFs]);
+		        uncertainSnpColumns.put(chromName, new char[chromLength][numVCFs]);
+		        snpPositions.put(chromName,new HashSet<Integer>());
+		        snpFrequencies.put(chromName, new double[chromLength][numVCFs]);
+		        
+		        //initialize empty positions2ExcludeSets
+		        if(positions2ExcludeSet.get(chromName)==null)
+		        	positions2ExcludeSet.put(chromName, new HashSet<Integer>());
+		        
+		        //Fill SNP array
+				for(int i=0; i<chromLength; i++)
+					for(int j=0; j<numVCFs; j++)
+					{
+						snpColumns.get(chromName)[i][j] = nChar;
+						uncertainSnpColumns.get(chromName)[i][j] = nChar;
+					}
+		    }
+		    else 
+		    {
+		        throw(new Error("ERROR: Empty chromosome sequence: "+chromName));
+		    }
 		}
 		
-		//Fill SNP array
-		for(int i=0; i<snpColumns.length; i++)
-			for(int j=0; j<numVCFs; j++)
-			{
-				snpColumns[i][j] = refGenome.charAt(i);
-				uncertainSnpColumns[i][j] = refGenome.charAt(i);
-			}
+		//validate chromosome/contig names in positions2ExcludeSet
+		for (Map.Entry<String, Set<Integer>> entry : positions2ExcludeSet.entrySet())
+			if(!refGenome.containsKey(entry.getKey()))
+				throw(new Error("Chromosome/contig ID "+entry.getKey()+" not part of reference. ID appears in: "+positions2ExcludeFiles));
 		
 		
 		/////////////////////////
@@ -184,8 +210,7 @@ public class MultiVCFAnalyzer {
 		//start json
 		jsonbw.write("  \"metrics\": {\n");
 		
-		char nChar='N';
-		char rChar='R';
+
 		//counter
 		int covCount = 0;
 		int allPos = 0;
@@ -205,6 +230,8 @@ public class MultiVCFAnalyzer {
 		
 		String line;
 		String[] cols;
+		
+		String chromName;
 		
 		double qual;
 		int cov;
@@ -267,26 +294,15 @@ public class MultiVCFAnalyzer {
 				
 				//insert Ns at not handled sites, which are left out by GATK
 				lastPos1based=currPos1based;
-			
-				currPos1based = Integer.parseInt(cols[1]);
 				
+				chromName = cols[0];
 				
-				if(currPos1based-lastPos1based!=1)
-				{
-					if(lastPos1based>=currPos1based)
-						throw new Error("ERROR: Base calls in the vcf file are not sorted! (Note that multiple chromosomes are not supported.)");
-					
-					for(int i=lastPos1based+1; i<currPos1based; i++)
-					{
-						allPos++;
-						nonStandardRefChars++;
-						
-						snpColumns[currPos1based-1][vcfIndex] = nChar;
-						uncertainSnpColumns[currPos1based-1][vcfIndex] = nChar;
-						missingDataPos[currPos1based-1] = true;
-						
-					}
+				//Error, if chromosome does not exist
+				if (!refGenome.containsKey(chromName)) {
+				    throw new Error("Chromosome/contig ID "+chromName+" not part of reference. ID appears in VCF: "+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
 				}
+				
+				currPos1based = Integer.parseInt(cols[1]);
 				
 				allelCols = cols[9].split(":");
 				
@@ -294,11 +310,6 @@ public class MultiVCFAnalyzer {
 				if(allelCols[0].equals("./."))
 				{
 					noCallPos++;
-					
-					snpColumns[currPos1based-1][vcfIndex] = nChar;
-					uncertainSnpColumns[currPos1based-1][vcfIndex] = nChar;
-					missingDataPos[currPos1based-1] = true;
-					
 				}
 				//Reference Call
 				else if(allelCols[0].equals("0/0"))
@@ -311,16 +322,13 @@ public class MultiVCFAnalyzer {
 					{
 						refCallPos++;
 						
-						// do nothing since reference is called
+						snpColumns.get(chromName)[currPos1based-1][vcfIndex] = refGenome.get(chromName).charAt(currPos1based-1);
+						uncertainSnpColumns.get(chromName)[currPos1based-1][vcfIndex] = refGenome.get(chromName).charAt(currPos1based-1);
 					}
 					else
 					{
 						discardedRefCall++;
-						
-						snpColumns[currPos1based-1][vcfIndex] = nChar;
-						uncertainSnpColumns[currPos1based-1][vcfIndex] = rChar;
-						missingDataPos[currPos1based-1] = true;
-						
+						uncertainSnpColumns.get(chromName)[currPos1based-1][vcfIndex] = rChar;
 					}
 				}
 				//variant call
@@ -331,27 +339,27 @@ public class MultiVCFAnalyzer {
 					SNPallelFreq=Math.min((double)cov/(cov+Integer.parseInt(allelCols[1].split(",")[0])-1) , 1); // -1 because once doesn't count
 					
 					if(writeFreqsInStatTable)
-						snpFrequencies[currPos1based-1][vcfIndex] = SNPallelFreq;
+						snpFrequencies.get(chromName)[currPos1based-1][vcfIndex] = SNPallelFreq;
 					
 					covCount+=cov+Integer.parseInt(allelCols[1].split(",")[0]);
 					
 					if(qual>=minQual && cov >= minCov && SNPallelFreq >= minHomSNPallelFreq)
 					{
-						if(positions2ExcludeSet.contains(currPos1based))
+						if(positions2ExcludeSet.get(chromName).contains(currPos1based))
 							filteredVarCall++;
 						else
 							varCallPos++;
 						
-						snpColumns[currPos1based-1][vcfIndex] = cols[4].charAt(0);
-						uncertainSnpColumns[currPos1based-1][vcfIndex] = cols[4].charAt(0);
+						snpColumns.get(chromName)[currPos1based-1][vcfIndex] = cols[4].charAt(0);
+						uncertainSnpColumns.get(chromName)[currPos1based-1][vcfIndex] = cols[4].charAt(0);
 						
 						if(!outgroup)
-							snpPositions.add(currPos1based);
+							snpPositions.get(chromName).add(currPos1based);
 						
 					}
 					else if(qual>=minQual && cov >= minCov && SNPallelFreq >= minHetSNPallelFreq)
 					{
-						if(positions2ExcludeSet.contains(currPos1based))
+						if(positions2ExcludeSet.get(chromName).contains(currPos1based))
 							filteredVarCall++;
 						else
 						{
@@ -359,11 +367,11 @@ public class MultiVCFAnalyzer {
 							hetVarCallPos++;
 						}
 						
-						snpColumns[currPos1based-1][vcfIndex] = getAmbiguousBase(snpColumns[currPos1based-1][vcfIndex] , cols[4].charAt(0));
-						uncertainSnpColumns[currPos1based-1][vcfIndex] = getAmbiguousBase(snpColumns[currPos1based-1][vcfIndex] , cols[4].charAt(0));
+						snpColumns.get(chromName)[currPos1based-1][vcfIndex] = getAmbiguousBase(refGenome.get(chromName).charAt(currPos1based-1) , cols[4].charAt(0));
+						uncertainSnpColumns.get(chromName)[currPos1based-1][vcfIndex] = getAmbiguousBase(refGenome.get(chromName).charAt(currPos1based-1) , cols[4].charAt(0));
 
 						if(!outgroup)
-							snpPositions.add(currPos1based);
+							snpPositions.get(chromName).add(currPos1based);
 						
 					}
 					else
@@ -377,32 +385,22 @@ public class MultiVCFAnalyzer {
 							if(SNPallelFreq>=minHomSNPallelFreq)
 							{
 								refCallPos++;
+								
+								snpColumns.get(chromName)[currPos1based-1][vcfIndex] = refGenome.get(chromName).charAt(currPos1based-1);
+								uncertainSnpColumns.get(chromName)[currPos1based-1][vcfIndex] = refGenome.get(chromName).charAt(currPos1based-1);
 							}
 							else
 							{
 								//System.err.println("DEBUG: "+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset])+" pos: "+currPos1based);
 								discardedVarCall++;
-								
-								snpColumns[currPos1based-1][vcfIndex] = nChar;
-								uncertainSnpColumns[currPos1based-1][vcfIndex] = nChar;
-
-								missingDataPos[currPos1based-1] = true;
 							}
-							// do nothing since reference is called
 						}
 						else
 						{
 							discardedVarCall++;
-							
-							snpColumns[currPos1based-1][vcfIndex] = nChar;
-							
+														
 							if(allelCols[0].equals("1/1"))
-								uncertainSnpColumns[currPos1based-1][vcfIndex] = Character.toLowerCase(cols[4].charAt(0));
-							else
-								uncertainSnpColumns[currPos1based-1][vcfIndex] = nChar;
-
-							missingDataPos[currPos1based-1] = true;
-							
+								uncertainSnpColumns.get(chromName)[currPos1based-1][vcfIndex] = Character.toLowerCase(cols[4].charAt(0));							
 						}
 					}
 					
@@ -412,10 +410,6 @@ public class MultiVCFAnalyzer {
 				{
 					unknownCall++;
 					//System.err.println("WARNING: The Genotype "+allelCols[0]+" cannot be handled:\n"+line+"\nInserting 'N'!");
-					
-					snpColumns[currPos1based-1][vcfIndex] = nChar;
-					uncertainSnpColumns[currPos1based-1][vcfIndex] = nChar;
-					missingDataPos[currPos1based-1] = true;
 				}
 				
 			}
@@ -469,16 +463,22 @@ public class MultiVCFAnalyzer {
 		excludePositionsFromSet(snpPositions, positions2ExcludeFiles);
 		
 		
-		//create list
-		List<Integer> snpPositionList = new LinkedList<Integer>(snpPositions);
-		Collections.sort(snpPositionList);
+		//create list	
+		Map<String, List<Integer>> snpPositionList = new LinkedHashMap<String, List<Integer>>();
+
+		for(Map.Entry<String, Set<Integer>> entry : snpPositions.entrySet())
+		{
+		    List<Integer> sortedPositions = new LinkedList<Integer>(entry.getValue());
+		    Collections.sort(sortedPositions);
+		    snpPositionList.put(entry.getKey(), sortedPositions);
+		}
 		
 		//Write SNP table
 		System.out.println("Writing SNP table:\n"+outSNPtable);
 		
 		BufferedWriter snptabbw = new BufferedWriter(new FileWriter(outSNPtable));
 		
-		snptabbw.write("Position\tRef");
+		snptabbw.write("Chrom\tPosition\tRef");
 		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
@@ -486,27 +486,31 @@ public class MultiVCFAnalyzer {
 		snptabbw.newLine();
 		
 		char tmpchar;
-		for(int pos : snpPositionList)
+		
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
 		{
-			snptabbw.write(pos+"\t"+refGenome.charAt(pos-1));
-			
-			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+			for(int pos : entry.getValue())
 			{
-				snptabbw.write("\t");
-				tmpchar = snpColumns[pos-1][vcfIndex];
-				if(tmpchar==refGenome.charAt(pos-1))
-					snptabbw.write(".");
-				else
+				snptabbw.write(entry.getKey()+"\t"+pos+"\t"+refGenome.get(entry.getKey()).charAt(pos-1));
+				
+				for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 				{
-					snptabbw.write(tmpchar);
-					
-					if(writeFreqsInStatTable && tmpchar!='N')
+					snptabbw.write("\t");
+					tmpchar = snpColumns.get(entry.getKey())[pos-1][vcfIndex];
+					if(tmpchar==refGenome.get(entry.getKey()).charAt(pos-1))
+						snptabbw.write(".");
+					else
 					{
-						snptabbw.write(" ("+Math.round(snpFrequencies[pos-1][vcfIndex]*1000d)/10d+")");
+						snptabbw.write(tmpchar);
+						
+						if(writeFreqsInStatTable && tmpchar!='N')
+						{
+							snptabbw.write(" ("+Math.round(snpFrequencies.get(entry.getKey())[pos-1][vcfIndex]*1000d)/10d+")");
+						}
 					}
 				}
+				snptabbw.newLine();
 			}
-			snptabbw.newLine();
 		}
 		
 		snptabbw.close();
@@ -517,34 +521,37 @@ public class MultiVCFAnalyzer {
 		
 		snptabbw = new BufferedWriter(new FileWriter(outSNPtableWithUncertaintyCalls)); // 2/3 differences
 		
-		snptabbw.write("Position\tRef");
+		snptabbw.write("Chrom\tPosition\tRef");
 		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
 		}
 		snptabbw.newLine();
 		
-		for(int pos : snpPositionList)
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
 		{
-			snptabbw.write(pos+"\t"+refGenome.charAt(pos-1));
-			
-			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+			for(int pos : entry.getValue())
 			{
-				snptabbw.write("\t");
-				tmpchar = uncertainSnpColumns[pos-1][vcfIndex]; // 3/3 differences
-				if(tmpchar==refGenome.charAt(pos-1))
-					snptabbw.write(".");
-				else
+				snptabbw.write(entry.getKey()+"\t"+pos+"\t"+refGenome.get(entry.getKey()).charAt(pos-1));
+				
+				for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 				{
-					snptabbw.write(tmpchar);
-					
-					if(writeFreqsInStatTable && tmpchar!='N')
+					snptabbw.write("\t");
+					tmpchar = uncertainSnpColumns.get(entry.getKey())[pos-1][vcfIndex]; // 3/3 differences
+					if(tmpchar==refGenome.get(entry.getKey()).charAt(pos-1))
+						snptabbw.write(".");
+					else
 					{
-						snptabbw.write(" ("+Math.round(snpFrequencies[pos-1][vcfIndex]*1000d)/10d+")");
+						snptabbw.write(tmpchar);
+						
+						if(writeFreqsInStatTable && tmpchar!='N')
+						{
+							snptabbw.write(" ("+Math.round(snpFrequencies.get(entry.getKey())[pos-1][vcfIndex]*1000d)/10d+")");
+						}
 					}
 				}
+				snptabbw.newLine();
 			}
-			snptabbw.newLine();
 		}
 		
 		snptabbw.close();
@@ -555,14 +562,17 @@ public class MultiVCFAnalyzer {
 		System.out.println("Writing SNP alignment (fasta):\n"+outSNPfasta);
 		
 		StringBuffer tmpSeq;
+
 		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			tmpSeq=new StringBuffer();
-			for(int pos : snpPositionList)
-				tmpSeq.append(snpColumns[pos-1][vcfIndex]);
+			for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+				for(int pos : entry.getValue())
+					tmpSeq.append(snpColumns.get(entry.getKey())[pos-1][vcfIndex]);
 			
 			FASTAWriter.write(bw, getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]), tmpSeq.toString());
 		}
+		
 		
 		bw.close();
 		
@@ -573,19 +583,22 @@ public class MultiVCFAnalyzer {
 		System.out.println("Writing SNP alignment including reference genome (fasta):\n"+outSNPfastaWithRef);
 		
 		tmpSeq=new StringBuffer();
-		for(int pos : snpPositionList)
-			tmpSeq.append(refGenome.charAt(pos-1));
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+			for(int pos : entry.getValue())
+				tmpSeq.append(refGenome.get(entry.getKey()).charAt(pos-1));
 		
-		FASTAWriter.write(bw, "Reference_"+refGenomeName, tmpSeq.toString());
+		FASTAWriter.write(bw, "Reference", tmpSeq.toString());
 		
 		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			tmpSeq=new StringBuffer();
-			for(int pos : snpPositionList)
-				tmpSeq.append(snpColumns[pos-1][vcfIndex]);
+			for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+				for(int pos : entry.getValue())
+					tmpSeq.append(snpColumns.get(entry.getKey())[pos-1][vcfIndex]);
 			
 			FASTAWriter.write(bw, getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]), tmpSeq.toString());
 		}
+		
 				
 		bw.close();
 		
@@ -596,16 +609,19 @@ public class MultiVCFAnalyzer {
 		System.out.println("Writing full alignment including reference genome (fasta):\n"+outFullAlignmentFasta);
 		
 		tmpSeq=new StringBuffer();
-		for(int pos=1;pos<=refGenome.length();pos++)
-			tmpSeq.append(refGenome.charAt(pos-1));
+		for(Map.Entry<String, String> entry : refGenome.entrySet())
+			for(int pos=1;pos<=entry.getValue().length();pos++)
+				tmpSeq.append(entry.getValue().charAt(pos-1));
 		
-		FASTAWriter.write(bw, "Reference_"+refGenomeName, tmpSeq.toString());
+		FASTAWriter.write(bw, "Reference", tmpSeq.toString());
 		
 		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			tmpSeq=new StringBuffer();
-			for(int pos=1;pos<=refGenome.length();pos++)
-				tmpSeq.append(snpColumns[pos-1][vcfIndex]);
+			
+			for(Map.Entry<String, String> entry : refGenome.entrySet())
+				for(int pos=1;pos<=entry.getValue().length();pos++)
+					tmpSeq.append(snpColumns.get(entry.getKey())[pos-1][vcfIndex]);
 			
 			FASTAWriter.write(bw, getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]), tmpSeq.toString());
 		}
@@ -618,46 +634,15 @@ public class MultiVCFAnalyzer {
 		System.out.println("Writing genotypes for structure analysis:\n"+outGenoTypeTable4Structure);
 		
 		//first row for linked loci
-		bw.append("-1");
+		
 		int prevpos=0;
 		boolean first = true;
-		for(int pos : snpPositionList)
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
 		{
-			if(first)
-			{
-				first=false;
-				prevpos = pos;
-				continue;
-			}
-			else
-			{
-				bw.append("\t"+(pos-prevpos));
-				prevpos=pos;
-			}
-		}
-		
-		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
-		{
-			bw.newLine();
-			bw.append(getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
-			for(int pos : snpPositionList)
-				bw.append("\t"+getGenotypeEncoding(snpColumns[pos-1][vcfIndex]));
-		}
-		
-		bw.close();
-		
-		//write Genotypes for Structure (no missing data)
-		bw = new BufferedWriter(new FileWriter(outGenoTypeTable4StructureCompDel));
-		
-		System.out.println("Writing genotypes for structure analysis (no missing data columns):\n"+outGenoTypeTable4StructureCompDel);
-		
-		//first row for linked loci
-		bw.append("-1");
-		prevpos = 0;
-		first = true;
-		for(int pos : snpPositionList)
-		{
-			if(!missingDataPos[pos-1])
+			bw.append("-1");
+			prevpos=0;
+			first = true;
+			for(int pos : entry.getValue())
 			{
 				if(first)
 				{
@@ -677,9 +662,54 @@ public class MultiVCFAnalyzer {
 		{
 			bw.newLine();
 			bw.append(getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
-			for(int pos : snpPositionList)
-				if(!missingDataPos[pos-1])
-					bw.append("\t"+getGenotypeEncoding(snpColumns[pos-1][vcfIndex]));
+			for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+				for(int pos : entry.getValue())
+					bw.append("\t"+getGenotypeEncoding(snpColumns.get(entry.getKey())[pos-1][vcfIndex]));
+		}
+		
+		bw.close();
+		
+		//write Genotypes for Structure (no missing data)
+		bw = new BufferedWriter(new FileWriter(outGenoTypeTable4StructureCompDel));
+		
+		System.out.println("Writing genotypes for structure analysis (no missing data columns):\n"+outGenoTypeTable4StructureCompDel);
+		
+		//first row for linked loci
+
+		prevpos = 0;
+		first = true;
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+		{
+			bw.append("-1");
+			prevpos=0;
+			first = true;
+			for(int pos : entry.getValue())
+			{
+				if(!hasMissingData(snpColumns.get(entry.getKey())[pos-1],nChar))
+				{
+					if(first)
+					{
+						first=false;
+						prevpos = pos;
+						continue;
+					}
+					else
+					{
+						bw.append("\t"+(pos-prevpos));
+						prevpos=pos;
+					}
+				}
+			}
+		}
+		
+		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+		{
+			bw.newLine();
+			bw.append(getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
+			for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+				for(int pos : entry.getValue())
+					if(!hasMissingData(snpColumns.get(entry.getKey())[pos-1],nChar))
+						bw.append("\t"+getGenotypeEncoding(snpColumns.get(entry.getKey())[pos-1][vcfIndex]));
 		}
 		
 		bw.close();
@@ -691,44 +721,45 @@ public class MultiVCFAnalyzer {
 		
 		snptabbw = new BufferedWriter(new FileWriter(outGenoTypeMatrix));
 		
-		snptabbw.write("Position\tRef");
+		snptabbw.write("Chrom\tPosition\tRef");
 		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
 		}
 		snptabbw.newLine();
-			
-		for(int pos : snpPositionList)
-		{
-			snptabbw.write(pos+"\t"+refGenome.charAt(pos-1));
-			
-			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+		
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+			for(int pos : entry.getValue())
 			{
-				snptabbw.write("\t");
-				tmpchar = snpColumns[pos-1][vcfIndex];
-				if(tmpchar==refGenome.charAt(pos-1))
-					snptabbw.write("-1");
-				else
+				snptabbw.write(entry.getKey()+"\t"+pos+"\t"+refGenome.get(entry.getKey()).charAt(pos-1));
+				
+				for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 				{
-					if(tmpchar=='N')
-						snptabbw.write('?');
-					
-					if(!writeFreqsInStatTable && tmpchar!='N')
+					snptabbw.write("\t");
+					tmpchar = snpColumns.get(entry.getKey())[pos-1][vcfIndex];
+					if(tmpchar==refGenome.get(entry.getKey()).charAt(pos-1))
+						snptabbw.write("-1");
+					else
 					{
-						snptabbw.write('1');
-					}
-					
-					if(writeFreqsInStatTable && tmpchar!='N')
-					{
-						if(snpFrequencies[pos-1][vcfIndex]<minHomSNPallelFreq)
-							snptabbw.write('0');
-						else
+						if(tmpchar=='N')
+							snptabbw.write('?');
+						
+						if(!writeFreqsInStatTable && tmpchar!='N')
+						{
 							snptabbw.write('1');
+						}
+						
+						if(writeFreqsInStatTable && tmpchar!='N')
+						{
+							if(snpFrequencies.get(entry.getKey())[pos-1][vcfIndex]<minHomSNPallelFreq)
+								snptabbw.write('0');
+							else
+								snptabbw.write('1');
+						}
 					}
 				}
+				snptabbw.newLine();
 			}
-			snptabbw.newLine();
-		}
 		
 		snptabbw.close();
 		
@@ -739,42 +770,43 @@ public class MultiVCFAnalyzer {
 		
 		snptabbw = new BufferedWriter(new FileWriter(outGenoTypeFreqMatrix));
 		
-		snptabbw.write("Position\tRef");
+		snptabbw.write("Chrom\tPosition\tRef");
 		for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 		{
 			snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
 		}
 		snptabbw.newLine();
-			
-		for(int pos : snpPositionList)
-		{
-			snptabbw.write(pos+"\t"+refGenome.charAt(pos-1));
-			
-			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+		
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+			for(int pos : entry.getValue())
 			{
-				snptabbw.write("\t");
-				tmpchar = snpColumns[pos-1][vcfIndex];
-				if(tmpchar==refGenome.charAt(pos-1))
-					snptabbw.write("0.0");
-				else
+				snptabbw.write(entry.getKey()+"\t"+pos+"\t"+refGenome.get(entry.getKey()).charAt(pos-1));
+				
+				for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 				{
-					if(tmpchar=='N')
-						snptabbw.write('?');
-					
-					if(!writeFreqsInStatTable && tmpchar!='N')
+					snptabbw.write("\t");
+					tmpchar = snpColumns.get(entry.getKey())[pos-1][vcfIndex];
+					if(tmpchar==refGenome.get(entry.getKey()).charAt(pos-1))
+						snptabbw.write("0.0");
+					else
 					{
-						snptabbw.write("1.0");
-					}
-					
-					if(writeFreqsInStatTable && tmpchar!='N')
-					{
-						if(snpFrequencies[pos-1][vcfIndex]<minHomSNPallelFreq)
-							snptabbw.write(Double.toString(Math.min(snpFrequencies[pos-1][vcfIndex], 1.0)));
-						else
+						if(tmpchar=='N')
+							snptabbw.write('?');
+						
+						if(!writeFreqsInStatTable && tmpchar!='N')
+						{
 							snptabbw.write("1.0");
+						}
+						
+						if(writeFreqsInStatTable && tmpchar!='N')
+						{
+							if(snpFrequencies.get(entry.getKey())[pos-1][vcfIndex]<minHomSNPallelFreq)
+								snptabbw.write(Double.toString(Math.min(snpFrequencies.get(entry.getKey())[pos-1][vcfIndex], 1.0)));
+							else
+								snptabbw.write("1.0");
+						}
 					}
 				}
-			}
 			snptabbw.newLine();
 		}
 		
@@ -791,27 +823,28 @@ public class MultiVCFAnalyzer {
 		
 		first=true;
 		
-		for(int pos : snpPositionList)
-		{
-			toChars.clear();
-			columnChars = snpColumns[pos-1];
-			
-			for(char c : columnChars)
+		for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+			for(int pos : entry.getValue())
 			{
-				if(validChars.contains(c) && refGenome.charAt(pos-1)!=c)
-					toChars.add(c);
-			}
-			
-			for(char c : toChars)
-			{
-				if(!first)
-					bw.newLine();
-				else
-					first=false;
+				toChars.clear();
+				columnChars = snpColumns.get(entry.getKey())[pos-1];
 				
-				bw.append(refGenomeName+"\t"+pos+"\t"+refGenome.charAt(pos-1)+"\t"+c);
+				for(char c : columnChars)
+				{
+					if(validChars.contains(c) && refGenome.get(entry.getKey()).charAt(pos-1)!=c)
+						toChars.add(c);
+				}
+				
+				for(char c : toChars)
+				{
+					if(!first)
+						bw.newLine();
+					else
+						first=false;
+					
+					bw.append(entry.getKey()+"\t"+pos+"\t"+refGenome.get(entry.getKey()).charAt(pos-1)+"\t"+c);
+				}
 			}
-		}
 		
 		bw.close();
 		
@@ -825,20 +858,26 @@ public class MultiVCFAnalyzer {
 			//SNPeff SNPs
 			List<SNPeffSNP> esnps = Read.readSNPeffSNPs(snpEffOutputFile);
 			
-			Map<Integer,List<SNPeffSNP>> esnpsmap = new HashMap<Integer, List<SNPeffSNP>>();
+			Map<String,Map<Integer,List<SNPeffSNP>>> esnpsmap = new LinkedHashMap<String,Map<Integer, List<SNPeffSNP>>>();
 			
 			for(SNPeffSNP esnp : esnps)
 			{
-				if(!esnpsmap.containsKey(esnp.getPos()))
+				if(!refGenome.containsKey(esnp.chromName))
+					throw new Error("Chromosome/contig ID "+esnp.chromName+" not part of reference. ID appears in SNPeff file: "+snpEffOutputFile);
+				if(!esnpsmap.containsKey(esnp.chromName))
 				{
-					esnpsmap.put(esnp.getPos(), new LinkedList<SNPeffSNP>());
+					esnpsmap.put(esnp.chromName, new LinkedHashMap<Integer,List<SNPeffSNP>>());
+				}
+				if(!esnpsmap.get(esnp.chromName).containsKey(esnp.getPos()))
+				{
+					esnpsmap.get(esnp.chromName).put(esnp.getPos(), new LinkedList<SNPeffSNP>());
 				}
 				
-				esnpsmap.get(esnp.getPos()).add(esnp);
+				esnpsmap.get(esnp.chromName).get(esnp.getPos()).add(esnp);
 			}
 			
 			//Proteins
-			Map<String,Gene> geneMap = new HashMap<String, Gene>();
+			Map<String,Gene> geneMap = new LinkedHashMap<String, Gene>();
 			
 			for(Gene g : Read.parseGFF(refGFF))
 				geneMap.put(g.name, g);
@@ -847,7 +886,7 @@ public class MultiVCFAnalyzer {
 			
 			snptabbw = new BufferedWriter(new FileWriter(outSNPtableWithSnpEffInfos));
 			
-			snptabbw.write("Position\tRef\tSNP");
+			snptabbw.write("Chrom\tPosition\tRef\tSNP");
 			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 			{
 				snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
@@ -859,50 +898,51 @@ public class MultiVCFAnalyzer {
 			Gene g;
 			String anno;
 			String length;
-			for(int pos : snpPositionList)
-			{
-				for(SNPeffSNP es : esnpsmap.get(pos))
+			for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+				for(int pos : entry.getValue())
 				{
-					g = geneMap.get(es.geneID);
-					
-					//anno/length
-					if(g!=null)
+					for(SNPeffSNP es : esnpsmap.get(entry.getKey()).get(pos))
 					{
-						anno = g.anno;
-						length = Integer.toString(g.length());
-					}
-					else
-					{
-						anno = "";
-						length = "";
-					}
-					
-					
-					
-					snptabbw.write(pos+"\t"+refGenome.charAt(pos-1)+"\t"+es.to);
-					
-					for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
-					{
-						snptabbw.write("\t");
-						tmpchar = snpColumns[pos-1][vcfIndex];
-						if(tmpchar==refGenome.charAt(pos-1))
-							snptabbw.write(".");
+						g = geneMap.get(es.geneID);
+						
+						//anno/length
+						if(g!=null)
+						{
+							anno = g.anno;
+							length = Integer.toString(g.length());
+						}
 						else
 						{
-							snptabbw.write(tmpchar);
-							
-							if(writeFreqsInStatTable && tmpchar!='N')
+							anno = "";
+							length = "";
+						}
+						
+						
+						
+						snptabbw.write(entry.getKey()+"\t"+pos+"\t"+refGenome.get(entry.getKey()).charAt(pos-1)+"\t"+es.to);
+						
+						for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+						{
+							snptabbw.write("\t");
+							tmpchar = snpColumns.get(entry.getKey())[pos-1][vcfIndex];
+							if(tmpchar==refGenome.get(entry.getKey()).charAt(pos-1))
+								snptabbw.write(".");
+							else
 							{
-								snptabbw.write(" ("+Math.round(snpFrequencies[pos-1][vcfIndex]*1000d)/10d+")");
+								snptabbw.write(tmpchar);
+								
+								if(writeFreqsInStatTable && tmpchar!='N')
+								{
+									snptabbw.write(" ("+Math.round(snpFrequencies.get(entry.getKey())[pos-1][vcfIndex]*1000d)/10d+")");
+								}
 							}
 						}
+						
+						snptabbw.write("\t"+es.effect+"\t"+es.geneID+"\t"+es.geneName+"\t"+anno+"\t"+es.aaChange+"\t"+es.codonChange+"\t"+es.codonNum+"\t"+length);
+						
+						snptabbw.newLine();
 					}
-					
-					snptabbw.write("\t"+es.effect+"\t"+es.geneID+"\t"+es.geneName+"\t"+anno+"\t"+es.aaChange+"\t"+es.codonChange+"\t"+es.codonNum+"\t"+length);
-					
-					snptabbw.newLine();
 				}
-			}
 			
 			snptabbw.close();
 		}
@@ -917,20 +957,26 @@ public class MultiVCFAnalyzer {
 			//SNPeff SNPs
 			List<SNPeffSNP> esnps = Read.readSNPeffSNPs(snpEffOutputFile);
 			
-			Map<Integer,List<SNPeffSNP>> esnpsmap = new HashMap<Integer, List<SNPeffSNP>>();
+			Map<String,Map<Integer,List<SNPeffSNP>>> esnpsmap = new LinkedHashMap<String,Map<Integer, List<SNPeffSNP>>>();
 			
 			for(SNPeffSNP esnp : esnps)
 			{
-				if(!esnpsmap.containsKey(esnp.getPos()))
+				if(!refGenome.containsKey(esnp.chromName))
+					throw new Error("Chromosome/contig ID "+esnp.chromName+" not part of reference. ID appears in SNPeff file: "+snpEffOutputFile);
+				if(!esnpsmap.containsKey(esnp.chromName))
 				{
-					esnpsmap.put(esnp.getPos(), new LinkedList<SNPeffSNP>());
+					esnpsmap.put(esnp.chromName, new LinkedHashMap<Integer,List<SNPeffSNP>>());
+				}
+				if(!esnpsmap.get(esnp.chromName).containsKey(esnp.getPos()))
+				{
+					esnpsmap.get(esnp.chromName).put(esnp.getPos(), new LinkedList<SNPeffSNP>());
 				}
 				
-				esnpsmap.get(esnp.getPos()).add(esnp);
+				esnpsmap.get(esnp.chromName).get(esnp.getPos()).add(esnp);
 			}
 			
 			//Proteins
-			Map<String,Gene> geneMap = new HashMap<String, Gene>();
+			Map<String,Gene> geneMap = new LinkedHashMap<String, Gene>();
 			
 			for(Gene g : Read.parseGFF(refGFF))
 				geneMap.put(g.name, g);
@@ -939,7 +985,7 @@ public class MultiVCFAnalyzer {
 			
 			snptabbw = new BufferedWriter(new FileWriter(outSNPtableWithUncertaintyCallsWithSnpEffInfos)); // 2/3 differences
 			
-			snptabbw.write("Position\tRef\tSNP");
+			snptabbw.write("Chrom\tPosition\tRef\tSNP");
 			for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
 			{
 				snptabbw.write("\t"+getSampleNameFromPath(args[vcfIndex+vcfArgumentsOffset]));
@@ -951,50 +997,51 @@ public class MultiVCFAnalyzer {
 			Gene g;
 			String anno;
 			String length;
-			for(int pos : snpPositionList)
-			{
-				for(SNPeffSNP es : esnpsmap.get(pos))
+			for(Map.Entry<String, List<Integer>> entry : snpPositionList.entrySet())
+				for(int pos : entry.getValue())
 				{
-					g = geneMap.get(es.geneID);
-					
-					//anno/length
-					if(g!=null)
+					for(SNPeffSNP es : esnpsmap.get(entry.getKey()).get(pos))
 					{
-						anno = g.anno;
-						length = Integer.toString(g.length());
-					}
-					else
-					{
-						anno = "";
-						length = "";
-					}
-					
-					
-					
-					snptabbw.write(pos+"\t"+refGenome.charAt(pos-1)+"\t"+es.to);
-					
-					for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
-					{
-						snptabbw.write("\t");
-						tmpchar = uncertainSnpColumns[pos-1][vcfIndex]; // 3/3 differences
-						if(tmpchar==refGenome.charAt(pos-1))
-							snptabbw.write(".");
+						g = geneMap.get(es.geneID);
+						
+						//anno/length
+						if(g!=null)
+						{
+							anno = g.anno;
+							length = Integer.toString(g.length());
+						}
 						else
 						{
-							snptabbw.write(tmpchar);
-							
-							if(writeFreqsInStatTable && tmpchar!='N')
+							anno = "";
+							length = "";
+						}
+						
+						
+						
+						snptabbw.write(entry.getKey()+"\t"+pos+"\t"+refGenome.get(entry.getKey()).charAt(pos-1)+"\t"+es.to);
+						
+						for(int vcfIndex=0; vcfIndex<numVCFs; vcfIndex++)
+						{
+							snptabbw.write("\t");
+							tmpchar = uncertainSnpColumns.get(entry.getKey())[pos-1][vcfIndex]; // 3/3 differences
+							if(tmpchar==refGenome.get(entry.getKey()).charAt(pos-1))
+								snptabbw.write(".");
+							else
 							{
-								snptabbw.write(" ("+Math.round(snpFrequencies[pos-1][vcfIndex]*1000d)/10d+")");
+								snptabbw.write(tmpchar);
+								
+								if(writeFreqsInStatTable && tmpchar!='N')
+								{
+									snptabbw.write(" ("+Math.round(snpFrequencies.get(entry.getKey())[pos-1][vcfIndex]*1000d)/10d+")");
+								}
 							}
 						}
+						
+						snptabbw.write("\t"+es.effect+"\t"+es.geneID+"\t"+es.geneName+"\t"+anno+"\t"+es.aaChange+"\t"+es.codonChange+"\t"+es.codonNum+"\t"+length);
+						
+						snptabbw.newLine();
 					}
-					
-					snptabbw.write("\t"+es.effect+"\t"+es.geneID+"\t"+es.geneName+"\t"+anno+"\t"+es.aaChange+"\t"+es.codonChange+"\t"+es.codonNum+"\t"+length);
-					
-					snptabbw.newLine();
 				}
-			}
 			
 			snptabbw.close();
 		}
@@ -1022,7 +1069,7 @@ public class MultiVCFAnalyzer {
 		System.out.println("All done! ("+Math.round((System.currentTimeMillis()-startTime)/60000d)+" minutes)");
 	}
 	
-	private static void excludePositionsFromSet(Set<Integer> positions, String posToExcludeFiles) throws Exception
+	private static void excludePositionsFromSet(Map<String,Set<Integer>> positions, String posToExcludeFiles) throws Exception
 	{
 		String[] filenames = posToExcludeFiles.split(",");
 		
@@ -1038,6 +1085,7 @@ public class MultiVCFAnalyzer {
 		{
 			
 			String[] cells;
+			String chromName;
 			int start;
 			int end;
 			
@@ -1052,18 +1100,27 @@ public class MultiVCFAnalyzer {
 				
 				cells = line.split("[\\t]");
 				
+				chromName = cells[0];
+				
 				// start = 3
 				start = Integer.parseInt(cells[3]);
 				
 				// end = 4
 				end = Integer.parseInt(cells[4]);
 				
+				Set<Integer> set = positions.get(chromName);
+				
+				if (set == null)
+				{
+				    throw new Error("Chromosome/contig ID "+chromName+" not part of reference. ID appears in file: "+posToExcludeFiles);
+				}
+				
 				for(int i=start;i<=end;i++)
 				{
-					if(positions.contains(i))
+					if(set.contains(i))
 					{
 						count++;
-						positions.remove(i);
+						set.remove(i);
 					}
 				}
 			}
@@ -1071,7 +1128,7 @@ public class MultiVCFAnalyzer {
 			br.close();
 		
 		}
-		
+
 		//exclude 1st and 2nd codon position
 		if(filenames.length>1)
 		{
@@ -1083,6 +1140,13 @@ public class MultiVCFAnalyzer {
 				
 				for(Gene g : cdss)
 				{
+					Set<Integer> set = positions.get(g.chromName);
+					
+					if (set == null)
+					{
+					    throw new Error("Chromosome/contig ID "+g.chromName+" not part of reference. ID appears in file: "+posToExcludeFiles);
+					}
+					
 					if(g.strand=='+')
 					{
 						for(int posGenome=g.start, posGene=1; posGenome<=g.end; posGenome++,posGene++)
@@ -1090,7 +1154,7 @@ public class MultiVCFAnalyzer {
 							if(posGene%3!=0)
 							{
 								count++;
-								positions.remove(posGenome);
+								set.remove(posGenome);
 							}
 						}
 					}
@@ -1099,7 +1163,7 @@ public class MultiVCFAnalyzer {
 						for(int posGenome=g.end, posGene=1; posGenome>=g.start; posGenome--,posGene++)
 						{
 							if(posGene%3!=0)
-								positions.remove(posGenome);
+								set.remove(posGenome);
 						}
 					}
 				}
@@ -1111,11 +1175,11 @@ public class MultiVCFAnalyzer {
 		System.out.println(count+" SNP positions excluded.");
 	}
 	
-	private static Set<Integer> getPositionsToExclude(String posToExcludeFile) throws Exception
+	private static Map<String,Set<Integer>> getPositionsToExclude(String posToExcludeFile) throws Exception
 	{
 		File infile = new File(posToExcludeFile);
 		
-		Set<Integer> res = new HashSet<Integer>();
+		Map<String,Set<Integer>> res = new LinkedHashMap<String,Set<Integer>>();
 		
 		if(!infile.exists())
 		{
@@ -1126,6 +1190,7 @@ public class MultiVCFAnalyzer {
 		
 		
 		String[] cells;
+		String chromName;
 		int start;
 		int end;
 		
@@ -1140,18 +1205,28 @@ public class MultiVCFAnalyzer {
 			
 			cells = line.split("[\\t]");
 			
+			chromName = cells[0];
+			
 			// start = 3
 			start = Integer.parseInt(cells[3]);
 			
 			// end = 4
 			end = Integer.parseInt(cells[4]);
 			
+			Set<Integer> set = res.get(chromName);
+			
+			if (set == null)
+			{
+			    set = new HashSet<>();
+			    res.put(chromName, set);
+			}
+			
 			for(int i=start;i<=end;i++)
 			{
-				res.add(i);
+				set.add(i);
 			}
 		}
-		
+
 		br.close();
 		
 		return res;
@@ -1227,6 +1302,17 @@ public class MultiVCFAnalyzer {
 			System.err.println("Warning: No genotype encoding for invalid character '"+nucleotide+"'!\nEncoding is set to '-9' to indicate missing data.");
 		
 		}
+		
+		return res;
+	}
+	
+	public static boolean hasMissingData(char[] snpCol, char nChar)
+	{
+		boolean res = false;
+		
+		for(char snp : snpCol)
+			if(snp == nChar)
+				res = true;
 		
 		return res;
 	}
