@@ -2,7 +2,7 @@
 
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -24,7 +24,7 @@ public class FASTAParser
 	{
 		BufferedReader br = new BufferedReader(new FileReader(filename));
 		
-		Map<String,String> fastaEntries = new HashMap<String, String>();
+		Map<String,String> fastaEntries = new LinkedHashMap<String, String>();
 		
 		String tmpID;
 		StringBuffer tmpSeqString = new StringBuffer();
@@ -57,6 +57,9 @@ public class FASTAParser
 			}
 			tmpLine = br.readLine();
 		}
+		if(fastaEntries.get(toID(tmpID)) != null)
+			throw new Error("ERROR: Reference genome file has duplicated chromosome/contig ID: "+toID(tmpID));
+			
 		fastaEntries.put(toID(tmpID), tmpSeqString.toString());
 		
 		br.close();
@@ -66,7 +69,7 @@ public class FASTAParser
 	
 	private static String toID(String fastaID)
 	{
-		return(fastaID.substring(1));
+		return(fastaID.split("\\s+")[0].substring(1));
 	}
 
 }
